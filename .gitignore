@@ -10,6 +10,12 @@ __pycache__/
 # Virtual environments
 .venv
 
+# Dotenv
+.env.local
+
+# PDM Related Files
+.pdm-python
+
 # Editor & OS-specific files
 .vscode/
 .idea/
