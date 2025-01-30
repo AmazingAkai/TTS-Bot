@@ -4,8 +4,9 @@ import os
 import arc
 import hikari
 from aiohttp import ClientSession
-from aiohttp.client_exceptions import ClientResponseError
 from hikari import files
+
+from exception import TTSError
 
 DEEPGRAM_API_BASE_URL = "https://api.deepgram.com/v1"
 DEEPGRAM_API_KEY = os.environ["DEEPGRAM_KEY"]
@@ -28,22 +29,27 @@ async def fetch_tts(text: str, session: ClientSession = arc.inject()) -> bytes:
         json=data,
     ) as response:
         log.debug("Response headers: %s", response.headers)
-
-        response.raise_for_status()
+        if response.status != 200:
+            raise TTSError(
+                title=f"Response Error (Status: {response.status})",
+                message=f"Failed to respond with message: {response.reason}",
+            )
         return await response.read()
 
 
 @plugin.include
-@arc.message_command(name="Read Aloud")
+@arc.message_command(name="Read Aloud", autodefer=True)
 async def read_aloud(ctx: arc.RESTContext, message: hikari.Message) -> None:
     if not message.content:
-        embed = hikari.Embed(
+        raise TTSError(
             title="Error (No Content)",
-            description="Please provide some text to read aloud.",
-            colour=hikari.Colour(0xED4245),
+            message="Please provide some text to read aloud.",
         )
-        await ctx.respond(embed=embed)
-        return
+    if len(message.content) > 2000:
+        raise TTSError(
+            title="Error (Too Long)",
+            message="Please provide a shorter message to read aloud.",
+        )
 
     tts = await fetch_tts(message.content)
     await ctx.respond(attachment=files.Bytes(tts, "tts.mp3"))
@@ -51,10 +57,10 @@ async def read_aloud(ctx: arc.RESTContext, message: hikari.Message) -> None:
 
 @read_aloud.set_error_handler
 async def read_aloud_error_handler(ctx: arc.RESTContext, exception: Exception) -> None:
-    if isinstance(exception, ClientResponseError):
+    if isinstance(exception, TTSError):
         embed = hikari.Embed(
-            title=f"Response Error (Status: {exception.status})",
-            description=f"Error fetching audio from Deepgram: {exception.message}",
+            title=exception.title,
+            description=exception.message,
             colour=hikari.Colour(0xED4245),
         )
         await ctx.respond(embed=embed)
